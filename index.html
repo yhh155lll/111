@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>云影视</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{padding:12px;background:#f4f6f8;font-family:system-ui}
+#video{width:100%;height:280px;background:#000;border-radius:12px;margin-bottom:10px}
+.controls{display:flex;gap:10px;margin-bottom:16px}
+.controls button{flex:1;padding:14px;background:#4361ee;color:#fff;border:none;border-radius:10px;font-weight:500}
+.search{display:flex;gap:10px;margin-bottom:16px}
+#wd{flex:1;padding:14px;border:1px solid #ddd;border-radius:10px;font-size:16px}
+.search button{padding:14px 18px;background:#4361ee;color:#fff;border:none;border-radius:10px}
+.item{padding:16px;background:#fff;border-radius:10px;margin-bottom:10px;cursor:pointer}
+.eps{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.eps button{padding:10px 14px;background:#fff;border:1px solid #ddd;border-radius:8px}
+.loading{text-align:center;padding:12px;color:#666}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
+</head>
+<body>
+
+<video id="video" controls></video>
+<div class="controls">
+  <button onclick="prev()">上一集</button>
+  <button onclick="next()">下一集</button>
+</div>
+<div class="search">
+  <input id="wd" placeholder="搜索电影/剧集">
+  <button onclick="search()">搜索</button>
+</div>
+<div id="loading" class="loading"></div>
+<div id="list"></div>
+<div id="eps" class="eps"></div>
+
+<script>
+const video = document.getElementById('video');
+const list = document.getElementById('list');
+const eps = document.getElementById('eps');
+const loading = document.getElementById('loading');
+let playList = [], curIdx = 0, hls = null;
+
+// 公共接口（无跨域、支持CF Pages）
+const API = 'https://api.splayer.top/api';
+
+async function search() {
+  const wd = document.getElementById('wd').value.trim();
+  if (!wd) return;
+  loading.textContent = '搜索中...';
+  list.innerHTML = eps.innerHTML = '';
+  try {
+    const res = await fetch(`${API}/search?wd=${encodeURIComponent(wd)}`);
+    const data = await res.json();
+    let html = '';
+    (data.list || []).forEach(item => {
+      html += `<div class="item" onclick="go('${item.id}')">${item.name}</div>`;
+    });
+    list.innerHTML = html;
+  } catch (e) {
+    alert('搜索失败：' + e.message);
+  } finally {
+    loading.textContent = '';
+  }
+}
+
+async function go(id) {
+  loading.textContent = '加载中...';
+  list.innerHTML = '';
+  try {
+    const res = await fetch(`${API}/detail?ids=${id}`);
+    const data = await res.json();
+    const info = data.list?.[0];
+    if (!info) { alert('无资源'); return; }
+    
+    playList = [];
+    let html = '';
+    const urls = info.vod_play_url || '';
+    urls.split('#').forEach((p, i) => {
+      const [title, url] = p.split('$');
+      if (url?.includes('.m3u8')) {
+        playList.push(url);
+        html += `<button onclick="play(${i})">${title || '线路' + (i + 1)}</button>`;
+      }
+    });
+    eps.innerHTML = html;
+    if (playList.length) play(0);
+  } catch (e) {
+    alert('加载失败');
+  } finally {
+    loading.textContent = '';
+  }
+}
+
+function play(i) {
+  curIdx = i;
+  const url = playList[curIdx];
+  if (!url) return;
+  if (hls) hls.destroy();
+  
+  if (Hls.isSupported()) {
+    hls = new Hls();
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play());
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src = url;
+    video.play();
+  }
+}
+
+function prev() { if (curIdx > 0) play(curIdx - 1); }
+function next() { if (curIdx < playList.length - 1) play(curIdx + 1); }
+</script>
+</body>
+</html>
